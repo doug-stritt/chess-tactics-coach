@@ -9,6 +9,10 @@ final class Game: ObservableObject {
     @Published private(set) var thinking = false
     @Published private(set) var error: String?
     @Published private(set) var player = Side.white
+    @Published private(set) var tactics: [SuggestedLine]?
+    @Published private(set) var bestLine: SuggestedLine?
+    @Published private(set) var tacticIndex: Int?
+    @Published private(set) var findingTactics = false
     @Published var promotions: [Move] = []
 
     private let initialFEN: String?
@@ -72,12 +76,44 @@ final class Game: ObservableObject {
         waitForBoard(history: moves + [move], computerReply: true)
     }
 
+    func suggestTactic() {
+        guard canMove, !findingTactics else { return }
+        guard tactics == nil else { return }
+        findingTactics = true
+        let revision = generation
+        let command = ChessEngine.Command(action: "tactics", fen: initialFEN, moves: moves)
+        Task {
+            do {
+                let result = try await engine.run(command)
+                guard revision == generation else { return }
+                bestLine = result.bestLine
+                tactics = result.tactics ?? []
+                tacticIndex = tactics?.isEmpty == false ? 0 : nil
+                findingTactics = false
+            } catch {
+                guard revision == generation else { return }
+                self.error = error.localizedDescription
+                findingTactics = false
+            }
+        }
+    }
+
+    func selectSuggestion(_ index: Int?) {
+        guard canMove, let tactics else { return }
+        if let index, !tactics.indices.contains(index) { return }
+        tacticIndex = index
+    }
+
     func retryComputer() {
         guard !busy, !thinking, position?.turn == player.opposite, position?.ending == nil else { return }
         waitForBoard(history: moves, computerReply: true)
     }
 
     private func waitForBoard(history: [Move], computerReply: Bool) {
+        tactics = nil
+        bestLine = nil
+        tacticIndex = nil
+        findingTactics = false
         generation += 1
         let revision = generation
         selected = nil

@@ -4,8 +4,8 @@ final class GameplayTests: XCTestCase {
     func testPlayAgainstComputerUndoAndRestart() {
         let app = XCUIApplication()
         app.launch()
-        let status = app.staticTexts["game-status"]
-        waitForTurn(status)
+        let square = app.buttons["square-e2"]
+        waitForTurn(square)
         let pawn = app.buttons["square-e2"]
         XCTAssertTrue(pawn.label.contains("white Pawn"))
         pawn.tap()
@@ -13,21 +13,21 @@ final class GameplayTests: XCTestCase {
         app.buttons["square-e4"].tap()
         let list = app.staticTexts["move-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 10))
-        waitForTurn(status)
+        waitForTurn(square)
         XCTAssertTrue(app.buttons["square-e4"].label.contains("white Pawn"))
         XCTAssertTrue(list.label.hasPrefix("1. e4 "))
         XCTAssertGreaterThan(list.label.split(separator: " ").count, 2)
         app.buttons["Undo turn"].tap()
-        waitForTurn(status)
+        waitForTurn(square)
         XCTAssertTrue(pawn.label.contains("white Pawn"))
         XCTAssertFalse(list.exists)
         app.buttons["square-d2"].tap()
         app.buttons["square-d4"].tap()
         XCTAssertTrue(list.waitForExistence(timeout: 10))
-        waitForTurn(status)
+        waitForTurn(square)
         app.buttons["New game"].tap()
         app.buttons["Play as White"].tap()
-        waitForTurn(status)
+        waitForTurn(square)
         XCTAssertTrue(app.buttons["square-d2"].label.contains("white Pawn"))
         XCTAssertFalse(list.exists)
     }
@@ -35,8 +35,8 @@ final class GameplayTests: XCTestCase {
     func testDragLegalAndIllegalDrops() {
         let app = XCUIApplication()
         app.launch()
-        let status = app.staticTexts["game-status"]
-        waitForTurn(status)
+        let square = app.buttons["square-e2"]
+        waitForTurn(square)
         let pawn = app.buttons["square-e2"]
         pawn.press(forDuration: 0.08, thenDragTo: app.buttons["square-e5"])
         XCTAssertTrue(pawn.label.contains("white Pawn"))
@@ -52,7 +52,7 @@ final class GameplayTests: XCTestCase {
         pawn.press(forDuration: 0.08, thenDragTo: destination)
         let list = app.staticTexts["move-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 10))
-        waitForTurn(status)
+        waitForTurn(square)
         XCTAssertTrue(destination.label.contains("white Pawn"))
         XCTAssertGreaterThan(list.label.split(separator: " ").count, 2)
     }
@@ -60,13 +60,13 @@ final class GameplayTests: XCTestCase {
     func testPlayingBlackFlipsBoardAndKeepsWhiteOpeningOnUndo() {
         let app = XCUIApplication()
         app.launch()
-        let status = app.staticTexts["game-status"]
-        waitForTurn(status)
+        let square = app.buttons["square-e2"]
+        waitForTurn(square)
         app.buttons["New game"].tap()
         app.buttons["Play as Black"].tap()
         let list = app.staticTexts["move-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 10))
-        waitForTurn(status)
+        waitForTurn(square)
         let opening = list.label
         XCTAssertEqual(opening.split(separator: " ").count, 2)
         // A White opening in the center can pin a pawn on some lines.
@@ -78,11 +78,11 @@ final class GameplayTests: XCTestCase {
         XCTAssertGreaterThan(app.buttons["square-a7"].frame.midX, app.buttons["square-h7"].frame.midX)
         XCTAssertFalse(app.buttons["Undo turn"].isEnabled)
         pawn.press(forDuration: 0.08, thenDragTo: target)
-        waitForTurn(status)
+        waitForTurn(square)
         XCTAssertTrue(target.label.contains("black Pawn"))
         XCTAssertTrue(list.label.contains("a6"))
         app.buttons["Undo turn"].tap()
-        waitForTurn(status)
+        waitForTurn(square)
         XCTAssertEqual(list.label, opening)
         XCTAssertTrue(pawn.label.contains("black Pawn"))
     }
@@ -91,7 +91,7 @@ final class GameplayTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments.append("--test-promotion")
         app.launch()
-        waitForTurn(app.staticTexts["game-status"])
+        waitForTurn(app.buttons["square-e2"])
         let pawn = app.buttons["square-a7"]
         let destination = app.buttons["square-a8"]
         pawn.tap()
@@ -110,9 +110,80 @@ final class GameplayTests: XCTestCase {
         XCTAssertTrue(destination.label.contains("white Knight"))
     }
 
-    private func waitForTurn(_ status: XCUIElement) {
-        let predicate = NSPredicate(format: "label == %@", "Your move")
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: status)], timeout: 20)
+    func testAutoShowTacticsOnSuccessiveTurnsAndOffForNewGame() {
+        let app = XCUIApplication()
+        app.launch()
+        let square = app.buttons["square-e2"]
+        waitForTurn(square)
+        let automatic = app.switches["auto-show-tactics"]
+        let evaluation = app.staticTexts["suggestion-evaluation"]
+        XCTAssertFalse(evaluation.exists)
+        automatic.tap()
+        XCTAssertTrue(evaluation.waitForExistence(timeout: 10))
+
+        app.buttons["square-e2"].tap()
+        app.buttons["square-e4"].tap()
+        XCTAssertTrue(app.staticTexts["move-list"].waitForExistence(timeout: 10))
+        waitForTurn(square)
+        XCTAssertTrue(evaluation.waitForExistence(timeout: 10))
+
+        automatic.tap()
+        app.buttons["New game"].tap()
+        app.buttons["Play as White"].tap()
+        waitForTurn(square)
+        XCTAssertFalse(evaluation.exists)
+        XCTAssertTrue(app.buttons["Show tactic"].isEnabled)
+    }
+
+    func testBestLineShowsThreeMovesInQuietOpening() {
+        let app = XCUIApplication()
+        app.launch()
+        waitForTurn(app.buttons["square-e2"])
+        app.buttons["Show tactic"].tap()
+        XCTAssertTrue(app.staticTexts["position-evaluation"].exists)
+        let line = app.staticTexts["best-line"]
+        XCTAssertTrue(line.waitForExistence(timeout: 10))
+        XCTAssertEqual(line.label.components(separatedBy: " → ").count, 3)
+        XCTAssertTrue(app.staticTexts["suggestion-evaluation"].exists)
+        XCTAssertTrue(app.buttons["suggestion-best"].exists)
+    }
+
+    func testTacticSuggestionsCycleAndClearOnMove() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--test-tactics")
+        app.launch()
+        waitForTurn(app.buttons["square-e2"])
+        app.buttons["Show tactic"].tap()
+        let line = app.staticTexts["tactic-line"]
+        XCTAssertTrue(line.waitForExistence(timeout: 10))
+        let initial = line.label
+        app.buttons["suggestion-1"].tap()
+        XCTAssertNotEqual(line.label, initial)
+        app.buttons["suggestion-best"].tap()
+        XCTAssertTrue(app.staticTexts["best-line"].exists)
+        app.buttons["suggestion-0"].tap()
+        XCTAssertEqual(line.label, initial)
+        app.buttons["square-c3"].tap()
+        app.buttons["square-d4"].tap()
+        XCTAssertTrue(app.staticTexts["move-list"].waitForExistence(timeout: 10))
+        XCTAssertFalse(line.exists)
+    }
+
+    func testForkSuggestionDisplaysMotif() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--test-fork")
+        app.launch()
+        waitForTurn(app.buttons["square-e2"])
+        app.buttons["Show tactic"].tap()
+        let motif = app.buttons["suggestion-0"]
+        XCTAssertTrue(motif.waitForExistence(timeout: 10))
+        XCTAssertTrue(motif.label.contains("Fork"))
+        XCTAssertTrue(app.staticTexts["tactic-line"].label.contains("Nxd8"))
+    }
+
+    private func waitForTurn(_ square: XCUIElement) {
+        let predicate = NSPredicate(format: "exists == true AND enabled == true")
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: square)], timeout: 20)
         XCTAssertEqual(result, .completed)
     }
 }

@@ -11,6 +11,12 @@ struct ChessApp: App {
         if ProcessInfo.processInfo.arguments.contains("--test-promotion") {
             return "4k3/P7/8/8/8/8/8/4K3 w - - 0 1"
         }
+        if ProcessInfo.processInfo.arguments.contains("--test-tactics") {
+            return "4k3/8/8/8/3q4/2P5/3R4/4K3 w - - 0 1"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--test-fork") {
+            return "3q3k/8/8/4N3/8/8/P7/4K3 w - - 0 1"
+        }
         #endif
         return nil
     }
@@ -23,6 +29,7 @@ struct GameView: View {
         _game = StateObject(wrappedValue: game())
     }
     @State private var chooseSide = false
+    @State private var autoShowTactics = false
     @GestureState private var drag: PieceDrag?
 
     private struct PieceDrag {
@@ -40,14 +47,9 @@ struct GameView: View {
             let boardSize = min(geometry.size.width - 40, 472)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Chess")
-                            .font(.system(size: 49, weight: .regular, design: .serif))
-                            .accessibilityAddTraits(.isHeader)
-                        Text("You play \(game.player.rawValue) · Computer plays \(game.player.opposite.rawValue)")
-                            .font(.subheadline)
-                            .foregroundStyle(ink.opacity(0.75))
-                    }
+                    Text("Chess")
+                        .font(.system(size: 49, weight: .regular, design: .serif))
+                        .accessibilityAddTraits(.isHeader)
                     status
                     board(size: boardSize)
                     HStack(spacing: 12) {
@@ -60,6 +62,7 @@ struct GameView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .buttonStyle(.bordered)
+                    tacticControls
                     moveList
                 }
                 .frame(width: boardSize)
@@ -73,6 +76,11 @@ struct GameView: View {
         .background(paper.ignoresSafeArea())
         .task {
             if game.position == nil { game.start() }
+        }
+        .onChange(of: autoShowTactics && game.canMove, initial: true) { _, shouldShow in
+            if shouldShow && game.tactics == nil {
+                game.suggestTactic()
+            }
         }
         .confirmationDialog("Choose your side", isPresented: $chooseSide, titleVisibility: .visible) {
             ForEach(Side.allCases, id: \.self) { side in
@@ -120,16 +128,21 @@ struct GameView: View {
 
     private var status: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 9) {
-                if game.busy || game.thinking {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Circle().fill(ink).frame(width: 7, height: 7).accessibilityHidden(true)
+            HStack(spacing: 8) {
+                if let position = game.position {
+                    Text("Position evaluation · \(evaluationText(position.evaluation))")
+                        .font(.subheadline.monospacedDigit())
+                        .accessibilityIdentifier("position-evaluation")
                 }
-                Text(statusText)
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("game-status")
+                if let statusText {
+                    Spacer(minLength: 0)
+                    Text(statusText)
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityIdentifier("game-status")
+                }
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
             if let error = game.error {
                 Text(error).font(.footnote)
                 if game.position?.turn == game.player.opposite && game.position?.ending == nil {
@@ -143,17 +156,17 @@ struct GameView: View {
         .background(ink.opacity(0.075), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private var statusText: String {
+    private var statusText: String? {
         if let position = game.position, let ending = position.ending {
             if ending == "Checkmate" {
                 return position.turn == game.player.opposite ? "Checkmate · You win" : "Checkmate · Computer wins"
             }
             return ending
         }
-        if game.thinking { return "Computer is thinking…" }
-        if game.busy || game.position == nil { return "Setting the board…" }
+        if game.position == nil { return "Setting the board…" }
+        if game.busy || game.thinking { return nil }
         if game.position?.turn == game.player.opposite { return "Computer to move" }
-        return game.position?.inCheck == true ? "Your move · Check" : "Your move"
+        return game.position?.inCheck == true ? "Check" : nil
     }
 
     private func board(size: CGFloat) -> some View {
@@ -182,6 +195,13 @@ struct GameView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(ink.opacity(0.15)))
+        .overlay {
+            if activeDrag == nil, let line = currentTactic {
+                tacticArrows(line.moves, squareSize: squareSize)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay(alignment: .topLeading) {
             if let activeDrag {
                 pieceImage(activeDrag.piece)
@@ -194,6 +214,119 @@ struct GameView: View {
         .coordinateSpace(name: "chessboard")
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Chessboard")
+    }
+
+    private var currentTactic: SuggestedLine? {
+        guard let index = game.tacticIndex else { return game.bestLine }
+        return game.tactics?[index]
+    }
+
+    private var tacticControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Auto-show tactics", isOn: $autoShowTactics)
+                .accessibilityIdentifier("auto-show-tactics")
+
+            if game.findingTactics {
+                ProgressView("Looking for tactics…")
+            } else if let tactics = game.tactics {
+                if let bestLine = game.bestLine {
+                    suggestionButton("Best line", line: bestLine, index: nil)
+                }
+                ForEach(Array(tactics.enumerated()), id: \.offset) { index, line in
+                    let title = line.motifs.isEmpty ? "Winning capture" : line.motifs.joined(separator: " · ")
+                    suggestionButton(title, line: line, index: index)
+                }
+                if currentTactic == nil {
+                    Text("No suggestion found.")
+                }
+            } else {
+                Button("Show tactic", systemImage: "arrow.up.right") { game.suggestTactic() }
+                    .buttonStyle(.bordered)
+                    .disabled(!game.canMove)
+            }
+
+            if let line = currentTactic {
+                Text(line.moves.map(\.san).joined(separator: " → "))
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier(game.tacticIndex == nil ? "best-line" : "tactic-line")
+                Text("Expected after line · \(evaluationText(line.evaluation))")
+                    .monospacedDigit()
+                    .accessibilityIdentifier("suggestion-evaluation")
+            }
+        }
+        .font(.subheadline)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func suggestionButton(_ title: String, line: SuggestedLine, index: Int?) -> some View {
+        let selected = game.tacticIndex == index
+        return Button {
+            game.selectSuggestion(index)
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(line.moves.first?.san ?? "")
+                    .monospaced()
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .accessibilityHidden(true)
+            }
+            .padding(10)
+            .background(ink.opacity(selected ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier(index.map { "suggestion-\($0)" } ?? "suggestion-best")
+    }
+
+    private func evaluationText(_ whiteEvaluation: Int) -> String {
+        let score = game.player == .white ? whiteEvaluation : -whiteEvaluation
+        if score == 30000 { return "Mate for you" }
+        if score == -30000 { return "Mate against you" }
+        if score == 0 { return 0.0.formatted(.number.precision(.fractionLength(2))) }
+        return (Double(score) / 100).formatted(.number.precision(.fractionLength(2)).sign(strategy: .always()))
+    }
+
+    private func tacticArrows(_ line: [Move], squareSize: CGFloat) -> some View {
+        Canvas { context, _ in
+            var centers: [String: CGPoint] = [:]
+            for row in 0..<8 {
+                for column in 0..<8 {
+                    centers[boardSquare(row: row, column: column)] = CGPoint(
+                        x: (CGFloat(column) + 0.5) * squareSize, y: (CGFloat(row) + 0.5) * squareSize)
+                }
+            }
+            for (index, move) in line.enumerated() {
+                guard let from = centers[move.from], let to = centers[move.to] else { continue }
+                let length = hypot(to.x - from.x, to.y - from.y)
+                let dx = (to.x - from.x) / length
+                let dy = (to.y - from.y) / length
+                let offset = squareSize * 0.09
+                let tail = CGPoint(x: from.x - dy * offset, y: from.y + dx * offset)
+                let tip = CGPoint(x: to.x - dy * offset, y: to.y + dx * offset)
+                let head = squareSize * 0.24
+                let color = index == 1 ? Color.blue : Color.orange
+                var shaft = Path()
+                shaft.move(to: tail)
+                let base = CGPoint(x: tip.x - dx * head, y: tip.y - dy * head)
+                shaft.addLine(to: base)
+                context.stroke(shaft, with: .color(color.opacity(0.88)),
+                               style: StrokeStyle(lineWidth: squareSize * 0.12, lineCap: .round))
+                var point = Path()
+                point.move(to: tip)
+                point.addLine(to: CGPoint(x: base.x - dy * head * 0.65, y: base.y + dx * head * 0.65))
+                point.addLine(to: CGPoint(x: base.x + dy * head * 0.65, y: base.y - dx * head * 0.65))
+                point.closeSubpath()
+                context.fill(point, with: .color(color.opacity(0.92)))
+                let label = CGPoint(x: tail.x + dx * squareSize * 0.28,
+                                    y: tail.y + dy * squareSize * 0.28)
+                let diameter = squareSize * 0.31
+                context.fill(Path(ellipseIn: CGRect(x: label.x - diameter / 2, y: label.y - diameter / 2,
+                                                    width: diameter, height: diameter)), with: .color(color))
+                context.draw(Text("\(index + 1)").font(.system(size: diameter * 0.72, weight: .bold))
+                    .foregroundStyle(index == 1 ? Color.white : Color.black), at: label)
+            }
+        }
     }
 
     private func pieceDrag(from source: String, piece: Character?, size: CGFloat) -> some Gesture {
@@ -256,7 +389,7 @@ struct GameView: View {
             .frame(width: size, height: size)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BoardSquareButtonStyle())
         .disabled(!game.canMove)
         .accessibilityIdentifier("square-\(square)")
         .accessibilityLabel(piece.map { "\(square), \($0.isUppercase ? "white" : "black") \(pieceName($0))" } ?? square)
@@ -296,5 +429,13 @@ struct GameView: View {
     private func pieceName(_ piece: Character?) -> String {
         let names = ["k": "King", "q": "Queen", "r": "Rook", "b": "Bishop", "n": "Knight", "p": "Pawn"]
         return piece.flatMap { names[$0.lowercased()] } ?? "Piece"
+    }
+}
+
+
+// Keep disabled squares visually identical while SwiftUI blocks their actions.
+private struct BoardSquareButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
