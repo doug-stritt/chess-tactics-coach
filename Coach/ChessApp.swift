@@ -22,7 +22,7 @@ struct GameView: View {
     init(game: @autoclosure @escaping () -> Game) {
         _game = StateObject(wrappedValue: game())
     }
-    @State private var confirmNewGame = false
+    @State private var chooseSide = false
     @GestureState private var drag: PieceDrag?
 
     private struct PieceDrag {
@@ -44,7 +44,7 @@ struct GameView: View {
                         Text("Chess")
                             .font(.system(size: 49, weight: .regular, design: .serif))
                             .accessibilityAddTraits(.isHeader)
-                        Text("You play White · Computer plays Black")
+                        Text("You play \(game.player.rawValue) · Computer plays \(game.player.opposite.rawValue)")
                             .font(.subheadline)
                             .foregroundStyle(ink.opacity(0.75))
                     }
@@ -52,11 +52,10 @@ struct GameView: View {
                     board(size: boardSize)
                     HStack(spacing: 12) {
                         Button("Undo turn", systemImage: "arrow.uturn.backward") { game.undo() }
-                            .disabled(game.moves.isEmpty || game.busy)
+                            .disabled(!game.canUndo)
                         Spacer()
                         Button("New game", systemImage: "plus") {
-                            if game.moves.isEmpty { game.start() }
-                            else { confirmNewGame = true }
+                            chooseSide = true
                         }
                     }
                     .font(.subheadline.weight(.semibold))
@@ -75,9 +74,13 @@ struct GameView: View {
         .task {
             if game.position == nil { game.start() }
         }
-        .alert("Start a new game?", isPresented: $confirmNewGame) {
-            Button("Keep playing", role: .cancel) {}
-            Button("Start over", role: .destructive) { game.start() }
+        .confirmationDialog("Choose your side", isPresented: $chooseSide, titleVisibility: .visible) {
+            ForEach(Side.allCases, id: \.self) { side in
+                Button("Play as \(side.rawValue)") { game.start(as: side) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choosing a side starts a new game.")
         }
         .sheet(isPresented: Binding(
             get: { !game.promotions.isEmpty },
@@ -88,7 +91,7 @@ struct GameView: View {
                     .font(.system(.title2, design: .serif).weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 ForEach(game.promotions, id: \.self) { move in
-                    if let promotion = move.promotion?.uppercased().first {
+                    if let promotion = move.promotion.flatMap({ (game.player == .white ? $0.uppercased() : $0).first }) {
                         Button {
                             game.play(move)
                         } label: {
@@ -129,7 +132,7 @@ struct GameView: View {
             }
             if let error = game.error {
                 Text(error).font(.footnote)
-                if game.position?.turn == "Black" && game.position?.ending == nil {
+                if game.position?.turn == game.player.opposite && game.position?.ending == nil {
                     Button("Retry computer move") { game.retryComputer() }
                 }
             }
@@ -143,13 +146,13 @@ struct GameView: View {
     private var statusText: String {
         if let position = game.position, let ending = position.ending {
             if ending == "Checkmate" {
-                return position.turn == "Black" ? "Checkmate · You win" : "Checkmate · Computer wins"
+                return position.turn == game.player.opposite ? "Checkmate · You win" : "Checkmate · Computer wins"
             }
             return ending
         }
         if game.thinking { return "Computer is thinking…" }
         if game.busy || game.position == nil { return "Setting the board…" }
-        if game.position?.turn == "Black" { return "Computer to move" }
+        if game.position?.turn == game.player.opposite { return "Computer to move" }
         return game.position?.inCheck == true ? "Your move · Check" : "Your move"
     }
 
@@ -166,7 +169,7 @@ struct GameView: View {
             ForEach(0..<8) { row in
                 HStack(spacing: 0) {
                     ForEach(0..<8) { col in
-                        let square = "\(files[col])\(8 - row)"
+                        let square = boardSquare(row: row, column: col)
                         squareView(square, piece: pieces[square], size: squareSize, row: row, col: col,
                                    destination: destinations.contains(square),
                                    selected: (activeDrag?.source ?? game.selected) == square,
@@ -204,10 +207,15 @@ struct GameView: View {
                 let point = value.location
                 guard point.x >= 0, point.y >= 0, point.x < size, point.y < size else { return }
                 let squareSize = size / 8
-                let file = Int(point.x / squareSize)
-                let rank = 8 - Int(point.y / squareSize)
-                game.move(from: source, to: "\(files[file])\(rank)")
+                let column = Int(point.x / squareSize)
+                let row = Int(point.y / squareSize)
+                game.move(from: source, to: boardSquare(row: row, column: column))
             }
+    }
+
+    private func boardSquare(row: Int, column: Int) -> String {
+        let flipped = game.player == .black
+        return "\(files[flipped ? 7 - column : column])\(flipped ? row + 1 : 8 - row)"
     }
 
     private func squareView(_ square: String, piece: Character?, size: CGFloat, row: Int, col: Int,
@@ -237,11 +245,11 @@ struct GameView: View {
                         .opacity(lifted ? 0 : 1)
                 }
                 if col == 0 {
-                    Text(String(8 - row)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    Text(String(square.suffix(1))).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding(3).font(.system(size: 8, weight: .bold))
                 }
                 if row == 7 {
-                    Text(String(files[col])).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    Text(String(square.prefix(1))).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .padding(3).font(.system(size: 8, weight: .bold))
                 }
             }

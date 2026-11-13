@@ -1,6 +1,6 @@
 # Chess Tactics Coach · Gameplay build
 
-Play standard chess offline as White against a local computer opponent. Drag a piece to a marked square, or tap the piece and then tap its destination. The game records moves in algebraic notation. **Undo turn** rolls back your move and the computer’s response, or just your move if the computer has yet to reply.
+Play standard chess offline against a local computer opponent. Choose **New game → Play as Black** to put Black at the bottom and let the computer open as White. Drag a piece to a marked square, or tap the piece and then tap its destination. The game records moves in algebraic notation. **Undo turn** rolls back your move and the computer’s response, or just your move if the computer has yet to reply. When you play Black, undo keeps the computer’s opening move.
 
 ## Run on the iPhone simulator
 
@@ -12,7 +12,7 @@ For a physical iPhone, select a development team under **Signing & Capabilities*
 
 ## Gameplay details
 
-The app uses SwiftUI, a bundled copy of chess.js 1.4.0 running in JavaScriptCore for rules, and a lightweight local opponent with one difficulty. It treats threefold repetition and the fifty-move rule as automatic draws. Games are held in memory for the current session. The bundled rules library’s license is in `Coach/ChessJS-LICENSE.txt`.
+The app uses SwiftUI, a bundled copy of chess.js 1.4.0 running in JavaScriptCore for rules, and a lightweight local opponent with one difficulty. The opponent mixes up its play by choosing among a small set of similarly rated moves, with a preference for higher scores. It treats threefold repetition and the fifty-move rule as automatic draws. Games are held in memory for the current session. The bundled rules library’s license is in `Coach/ChessJS-LICENSE.txt`.
 
 ## Piece artwork
 

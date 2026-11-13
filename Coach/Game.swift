@@ -8,6 +8,7 @@ final class Game: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var thinking = false
     @Published private(set) var error: String?
+    @Published private(set) var player = Side.white
     @Published var promotions: [Move] = []
 
     private let initialFEN: String?
@@ -24,16 +25,25 @@ final class Game: ObservableObject {
     }
 
     var canMove: Bool {
-        position?.turn == "White" && position?.ending == nil && !busy && !thinking
+        position?.turn == player && position?.ending == nil && !busy && !thinking
     }
 
-    func start() {
-        replaceHistory(with: [])
+    private var openingPlies: Int { player == .black ? 1 : 0 }
+
+    var canUndo: Bool { !busy && moves.count > openingPlies }
+
+    func start(as side: Side = .white) {
+        player = side
+        promotions = []
+        waitForBoard(history: [], computerReply: true)
     }
 
     func undo() {
-        guard !moves.isEmpty else { return }
-        replaceHistory(with: Array(moves.dropLast(moves.count.isMultiple(of: 2) ? 2 : 1)))
+        guard canUndo else { return }
+        let played = moves.count - openingPlies
+        let plies = played.isMultiple(of: 2) ? 2 : 1
+        promotions = []
+        waitForBoard(history: Array(moves.dropLast(plies)), computerReply: false)
     }
 
     func tap(_ square: String) {
@@ -63,13 +73,8 @@ final class Game: ObservableObject {
     }
 
     func retryComputer() {
-        guard !busy, !thinking, position?.turn == "Black", position?.ending == nil else { return }
+        guard !busy, !thinking, position?.turn == player.opposite, position?.ending == nil else { return }
         waitForBoard(history: moves, computerReply: true)
-    }
-
-    private func replaceHistory(with history: [Move]) {
-        promotions = []
-        waitForBoard(history: history, computerReply: false)
     }
 
     private func waitForBoard(history: [Move], computerReply: Bool) {
@@ -86,7 +91,7 @@ final class Game: ObservableObject {
                 position = result
                 moves = history
                 busy = false
-                guard computerReply, result?.turn == "Black", result?.ending == nil else { return }
+                guard computerReply, result?.turn == player.opposite, result?.ending == nil else { return }
                 thinking = true
                 let reply = try await engine.run(.init(action: "reply", fen: initialFEN, moves: history))
                 guard revision == generation else { return }

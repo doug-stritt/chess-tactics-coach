@@ -26,7 +26,7 @@ final class GameplayTests: XCTestCase {
         XCTAssertTrue(list.waitForExistence(timeout: 10))
         waitForTurn(status)
         app.buttons["New game"].tap()
-        app.alerts.buttons["Start over"].tap()
+        app.buttons["Play as White"].tap()
         waitForTurn(status)
         XCTAssertTrue(app.buttons["square-d2"].label.contains("white Pawn"))
         XCTAssertFalse(list.exists)
@@ -55,6 +55,36 @@ final class GameplayTests: XCTestCase {
         waitForTurn(status)
         XCTAssertTrue(destination.label.contains("white Pawn"))
         XCTAssertGreaterThan(list.label.split(separator: " ").count, 2)
+    }
+
+    func testPlayingBlackFlipsBoardAndKeepsWhiteOpeningOnUndo() {
+        let app = XCUIApplication()
+        app.launch()
+        let status = app.staticTexts["game-status"]
+        waitForTurn(status)
+        app.buttons["New game"].tap()
+        app.buttons["Play as Black"].tap()
+        let list = app.staticTexts["move-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        waitForTurn(status)
+        let opening = list.label
+        XCTAssertEqual(opening.split(separator: " ").count, 2)
+        // A White opening in the center can pin a pawn on some lines.
+        // Use an outside pawn whose one-square move is available after any opening.
+        let pawn = app.buttons["square-a7"]
+        let target = app.buttons["square-a6"]
+        XCTAssertTrue(pawn.label.contains("black Pawn"))
+        XCTAssertGreaterThan(pawn.frame.midY, target.frame.midY)
+        XCTAssertGreaterThan(app.buttons["square-a7"].frame.midX, app.buttons["square-h7"].frame.midX)
+        XCTAssertFalse(app.buttons["Undo turn"].isEnabled)
+        pawn.press(forDuration: 0.08, thenDragTo: target)
+        waitForTurn(status)
+        XCTAssertTrue(target.label.contains("black Pawn"))
+        XCTAssertTrue(list.label.contains("a6"))
+        app.buttons["Undo turn"].tap()
+        waitForTurn(status)
+        XCTAssertEqual(list.label, opening)
+        XCTAssertTrue(pawn.label.contains("black Pawn"))
     }
 
     func testPromotionPickerAndChoice() {

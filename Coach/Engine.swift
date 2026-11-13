@@ -8,13 +8,20 @@ struct Move: Codable, Hashable {
     let san: String
 }
 
+enum Side: String, CaseIterable {
+    case white = "White"
+    case black = "Black"
+
+    var opposite: Side { self == .white ? .black : .white }
+}
+
 struct Position: Decodable {
     let fen: String
     let moves: [Move]
     let ending: String?
     let inCheck: Bool
 
-    var turn: String { fen.split(separator: " ")[1] == "w" ? "White" : "Black" }
+    var turn: Side { fen.split(separator: " ")[1] == "w" ? .white : .black }
 
     var pieces: [String: Character] {
         var result: [String: Character] = [:]

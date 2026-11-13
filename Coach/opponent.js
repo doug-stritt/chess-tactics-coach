@@ -74,19 +74,29 @@ function search(position, depth, extensions, alpha, beta, ply) {
 
 function computerMove(position) {
   if (position.isGameOver()) return null;
-  let best;
-  let bestScore = -Infinity;
-  for (const move of orderedMoves(position)) {
+  const ranked = orderedMoves(position).map(move => {
     position.move(move);
     const score = -search(position, 1, 2, -Infinity, Infinity, 1);
     position.undo();
-    if (score > bestScore) {
-      bestScore = score;
-      best = move;
+    return { move, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const best = ranked[0];
+  // Mate scores are near ±30000. Keep their exact ordering during forced lines.
+  const margin = Math.abs(best.score) >= 29000 ? 0 : 24;
+  const candidates = ranked.slice(0, 5).filter(candidate => best.score - candidate.score <= margin);
+  const weights = candidates.map(candidate => margin + 1 - (best.score - candidate.score));
+  let choice = Math.random() * weights.reduce((total, weight) => total + weight, 0);
+  let selected = best;
+  for (const [index, candidate] of candidates.entries()) {
+    choice -= weights[index];
+    if (choice < 0) {
+      selected = candidate;
+      break;
     }
   }
-  if (!best) return null;
-  const { from, to, promotion, san } = best;
+
+  const { from, to, promotion, san } = selected.move;
   return { from, to, promotion, san };
 }
 
