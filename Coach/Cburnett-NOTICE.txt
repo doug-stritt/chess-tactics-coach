@@ -1,0 +1,9 @@
+Cburnett chess piece artwork by Colin M.L. Burnett.
+
+The twelve SVG files in Pieces.xcassets are unmodified copies from Lichess,
+revision 46780f30419e7ee0c13fa09c04a1741a60e72a77.
+https://github.com/lichess-org/lila/tree/46780f30419e7ee0c13fa09c04a1741a60e72a77/public/piece/cburnett
+
+Lichess lists the artwork under the GNU General Public License, version 2
+or later. See Cburnett-GPL-2.0.txt for the complete license text.
+https://github.com/lichess-org/lila/blob/46780f30419e7ee0c13fa09c04a1741a60e72a77/COPYING.md
